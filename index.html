@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RescueRoute | Ambulance Routing</title>
+
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f1f5f9;
+      color: #172033;
+    }
+
+    header {
+      background: #123b52;
+      color: white;
+      padding: 18px;
+    }
+
+    header h1 { margin: 0 0 6px; font-size: 25px; }
+    header p { margin: 0; font-size: 14px; }
+
+    main { max-width: 1100px; margin: auto; padding: 14px; }
+
+    .panel {
+      background: white;
+      padding: 15px;
+      border-radius: 12px;
+      margin-bottom: 12px;
+      box-shadow: 0 2px 8px #00000012;
+    }
+
+    .steps { line-height: 1.7; font-size: 14px; }
+
+    #map {
+      width: 100%;
+      height: 52vh;
+      min-height: 350px;
+      border-radius: 12px;
+      border: 1px solid #cbd5e1;
+    }
+
+    button {
+      border: 0;
+      padding: 11px 14px;
+      margin: 5px 5px 5px 0;
+      border-radius: 7px;
+      background: #087e8b;
+      color: white;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    button.secondary { background: #475569; }
+
+    .result {
+      margin-top: 10px;
+      padding: 12px;
+      background: #f8fafc;
+      border-radius: 8px;
+      line-height: 1.7;
+    }
+
+    .green { color: #16803c; font-weight: bold; }
+    .orange { color: #c66a08; font-weight: bold; }
+    .muted { color: #64748b; font-size: 13px; }
+    .notice { font-size: 12px; line-height: 1.6; color: #475569; }
+  </style>
+</head>
+
+<body>
+<header>
+  <h1>🚑 RescueRoute</h1>
+  <p>Real-Road Ambulance Routing | Tumakuru, Karnataka</p>
+</header>
+
+<main>
+  <section class="panel">
+    <h3>How to use</h3>
+    <div class="steps">
+      1. Click the map to select the ambulance starting point.<br>
+      2. Click again to select the emergency destination.<br>
+      3. Press <b>Find Routes</b> to calculate road routes and distances.
+    </div>
+
+   <div style="margin: 15px 0;">
+  <label for="hospitalSelect"><b>Select Destination Hospital:</b></label>
+  <select id="hospitalSelect" style="width:100%; padding:10px; margin-top:8px;">
+    <option value="">-- Choose a hospital --</option>
+    <option value="district">District Hospital, Tumakuru</option>
+    <option value="siddaganga">Siddaganga Hospital</option>
+    <option value="siddhartha">Sri Siddhartha Medical College Hospital</option>
+    <option value="shridevi">Shridevi Hospital</option>
+    <option value="vinayaka">Vinayaka Hospital</option>
+    <option value="kasturba">Kasturba Hospital</option>
+    <option value="aditi">Aditi Multi-Speciality Hospital</option>
+    <option value="aruna">Aruna Hospital</option>
+    <option value="ganga">Ganga Hospital</option>
+    <option value="sachi">Sachi Kidney & Multi-Speciality Hospital</option>
+  </select>
+</div>
+    <p id="selection">
+    Starting point: not selected
+    <br>
+    Destination: not selected
+</p>
+
+    <button id="routeBtn">Find Routes</button>
+   
+    <button id="resetBtn" class="secondary">Reset Points</button>
+    <div id="status" class="muted">Waiting for your points.</div>
+  </section>
+
+  <div id="map"></div>
+  <section class="panel" id="doctors">
+  <h3>👨‍⚕️ Specialists & Doctors</h3>
+  <p>Select a speciality to view sample doctor information.</p>
+
+  <select id="specialitySelect" style="width:100%; padding:10px;">
+    <option value="">-- Select speciality --</option>
+    <option value="cardiology">Cardiology</option>
+    <option value="neurology">Neurology</option>
+    <option value="orthopaedics">Orthopaedics</option>
+    <option value="paediatrics">Paediatrics</option>
+    <option value="general">General Medicine</option>
+  </select>
+
+  <div id="doctorResults" class="result">
+    Select a speciality to view information.
+  </div>
+</section>
+</section>  <!-- Hospital Directory ends here -->
+
+
+  <button id="myLocationBtn" type="button">
+    📍 Use My Location
+</button>
+  <section class="panel">
+    <h3>Route results</h3>
+    <div id="results" class="result">
+      Select two points on the map to begin.
+    </div>
+    <p class="notice">
+      Green = suggested route. Orange = alternative route, if available.
+      Distances and durations are routing estimates, not live traffic
+      measurements. This demonstration is not a validated emergency
+      navigation system.
+    </p>
+  </section>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+
+const specialitySelect = document.getElementById("specialitySelect");
+const doctorResults = document.getElementById("doctorResults");
+
+const sampleDoctors = {
+    cardiology: "Cardiology specialist — Demo listing",
+    neurology: "Neurology specialist — Demo listing",
+    orthopaedics: "Orthopaedics specialist — Demo listing",
+    paediatrics: "Paediatrics specialist — Demo listing",
+    general: "General Medicine specialist — Demo listing"
+};
+
+if (specialitySelect && doctorResults) {
+    specialitySelect.addEventListener("change", function () {
+        const speciality = specialitySelect.value;
+
+        doctorResults.textContent = speciality
+            ? sampleDoctors[speciality] +
+              " | Demonstration data only; doctor availability is not verified."
+            : "Select a speciality to view information.";
+    });
+}
+<script>
+  // Initial map view: Tumakuru city
+  const map = L.map("map").setView([13.3125, 76.9410], 13);
+
+  // OpenStreetMap map tiles
+  L.tileLayer("https://tile.openstreetmap.de/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(map);
+
+  // TomTom Traffic Overlay
+const trafficLayer = L.tileLayer(
+    "https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key=YOUR_API_KEY",
+    {
+        opacity: 0.7,
+        attribution: "Traffic data © TomTom"
+    }
+);
+
+trafficLayer.addTo(map);
+  let start = L.latLng(13.3125, 76.9410);
+  let destination = null;
+  let startMarker = null;
+  let destinationMarker = null;
+  let routeLayers = [];
+
+  const selection = document.getElementById("selection");
+  const statusBox = document.getElementById("status");
+  const results = document.getElementById("results");
+  const routeBtn = document.getElementById("routeBtn");
+
+ function updateSelection() {
+  const selectedHospital =
+    hospitalSelect.options[hospitalSelect.selectedIndex].text;
+
+  selection.innerHTML =
+    "Starting point: " +
+    (start
+      ? start.lat.toFixed(5) + ", " + start.lng.toFixed(5)
+      : "not selected") +
+    "<br>Destination: " +
+    (destination && hospitalSelect.value
+      ? selectedHospital
+      : "not selected");
+}
+  const hospitalSelect = document.getElementById("hospitalSelect");
+
+const hospitals = {
+  district: {
+    name: "District Hospital, Tumakuru",
+    lat: 13.3428,
+    lng: 77.1010
+  },
+  siddaganga: {
+    name: "Siddaganga Hospital",
+    lat: 13.3379,
+    lng: 77.1173
+  },
+  siddhartha: {
+    name: "Sri Siddhartha Medical College Hospital",
+    lat: 13.3700,
+    lng: 77.1300
+  },
+  shridevi: {
+    name: "Shridevi Hospital",
+    lat: 13.3450,
+    lng: 77.1100
+  },
+  vinayaka: {
+    name: "Vinayaka Hospital",
+    lat: 13.3400,
+    lng: 77.1050
+  },
+  kasturba: {
+    name: "Kasturba Hospital",
+    lat: 13.3300,
+    lng: 77.1200
+  },
+  aditi: {
+    name: "Aditi Multi-Speciality Hospital",
+    lat: 13.3500,
+    lng: 77.1150
+  },
+  aruna: {
+    name: "Aruna Hospital",
+    lat: 13.3350,
+    lng: 77.1000
+  },
+  ganga: {
+    name: "Ganga Hospital",
+    lat: 13.3450,
+    lng: 77.1250
+  },
+  sachi: {
+    name: "Sachi Kidney & Multi-Speciality Hospital",
+    lat: 13.3550,
+    lng: 77.1050
+  }
+};
+
+hospitalSelect.addEventListener("change", function () {
+  const hospital = hospitals[hospitalSelect.value];
+
+  if (!hospital) {
+    if (destinationMarker) {
+      map.removeLayer(destinationMarker);
+      destinationMarker = null;
+    }
+
+    destination = null;
+    updateSelection();
+    statusBox.textContent = "Select a destination hospital.";
+    return;
+  }
+
+  destination = L.latLng(hospital.lat, hospital.lng);
+
+  if (destinationMarker) {
+    map.removeLayer(destinationMarker);
+  }
+
+  destinationMarker = L.marker(destination)
+    .addTo(map)
+    .bindPopup(hospital.name)
+    .openPopup();
+
+  map.setView(destination, 14);
+  updateSelection();
+
+  statusBox.textContent =
+    hospital.name + " selected. Click Find Routes.";
+});
+
+  function clearRoutes() {
+    routeLayers.forEach(layer => map.removeLayer(layer));
+    routeLayers = [];
+  }
+
+  map.on("click", function(event) {
+    const point = event.latlng;
+
+    if (!start) {
+      start = point;
+      startMarker = L.marker(point).addTo(map)
+        .bindPopup("Ambulance starting point").openPopup();
+      statusBox.textContent = "Start selected. Now click the destination.";
+    } else if (!destination) {
+      destination = point;
+      destinationMarker = L.marker(point).addTo(map)
+        .bindPopup("Emergency destination").openPopup();
+      statusBox.textContent = "Both points selected. Click Find Routes.";
+    } else {
+      statusBox.textContent =
+        "Both points are already selected. Press Reset Points to choose again.";
+      return;
+    }
+
+    updateSelection();
+  });
+
+  routeBtn.addEventListener("click", async function() {
+    if (!start || !destination) {
+      statusBox.textContent = "Please select both points on the map first.";
+      return;
+    }
+
+    clearRoutes();
+    results.textContent = "Calculating road routes. Please wait...";
+    statusBox.textContent = "Connecting to the routing service...";
+    routeBtn.disabled = true;
+
+    try {
+      // OSRM requires longitude,latitude coordinate order.
+      const coordinates =
+        `${start.lng},${start.lat};${destination.lng},${destination.lat}`;
+
+      const url =
+        "https://router.project-osrm.org/route/v1/driving/" +
+        coordinates +
+      "?alternatives=3&overview=full&geometries=geojson";
+
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        throw new Error("Routing service returned an error.");
+      }
+
+      const data = await response.json();
+
+      if (data.code !== "Ok" || !data.routes || data.routes.length === 0) {
+        throw new Error("No driving route was found for these points.");
+      }
+
+      const bounds = [];
+
+      data.routes.forEach((route, index) => {
+        const isPrimary = index === 0;
+        const layer = L.geoJSON(route.geometry, {
+          style: {
+            color: isPrimary ? "#16803c" : "#e88718",
+            weight: isPrimary ? 6 : 4,
+            opacity: isPrimary ? 0.9 : 0.8,
+            dashArray: isPrimary ? null : "8, 8"
+          }
+        }).addTo(map);
+
+        routeLayers.push(layer);
+        bounds.push(layer.getBounds());
+
+        layer.bindPopup(
+          (isPrimary ? "Suggested route" : "Alternative route") +
+          "<br>Distance: " + (route.distance / 1000).toFixed(2) + " km" +
+          "<br>Estimated time: " + Math.round(route.duration / 60) + " minutes"
+        );
+      });
+
+      map.fitBounds(L.featureGroup(routeLayers).getBounds(), {
+        padding: [25, 25]
+      });
+
+      let html = "";
+
+      data.routes.forEach((route, index) => {
+        const distanceKm = (route.distance / 1000).toFixed(2);
+        const minutes = Math.round(route.duration / 60);
+
+        html +=
+          `<p><span class="${index === 0 ? "green" : "orange"}">` +
+          `${index === 0 ? "Suggested route" : "Alternative route " + index}` +
+          `</span><br>` +
+          `Road distance: <b>${distanceKm} km</b><br>` +
+          `Estimated driving time: <b>${minutes} minutes</b></p>`;
+      });
+
+      results.innerHTML = html;
+      statusBox.textContent =
+        `Found ${data.routes.length} route option(s). Click a route line for details.`;
+
+    } catch (error) {
+      results.textContent =
+        error.message +
+        " Check your internet connection and try again.";
+      statusBox.textContent = "Could not calculate routes.";
+    } finally {
+      routeBtn.disabled = false;
+    }
+  });
+
+  document.getElementById("resetBtn").addEventListener("click", function() {
+
+    if (startMarker) map.removeLayer(startMarker);
+    if (destinationMarker) map.removeLayer(destinationMarker);
+
+    start = null;
+    destination = null;
+
+    startMarker = null;
+    destinationMarker = null;
+
+    hospitalSelect.value = "";
+
+    clearRoutes();
+
+    updateSelection();
+
+    results.textContent =
+        "Select two points on the map to begin.";
+
+    statusBox.textContent =
+        "Points reset. Click the map to choose a new start.";
+
+    map.setView([13.3379, 77.1173], 14);
+});
+document.getElementById("myLocationBtn").addEventListener("click", function () {
+
+    const statusBox = document.getElementById("status");
+
+    if (!navigator.geolocation) {
+        statusBox.textContent = "Location is not supported by this browser.";
+        return;
+    }
+
+    statusBox.textContent = "Finding your location...";
+
+    navigator.geolocation.getCurrentPosition(
+        function (position) {
+
+            const latitude = position.coords.latitude;
+            const longitude = position.coords.longitude;
+
+            start = L.latLng(latitude, longitude);
+
+            if (startMarker) {
+                map.removeLayer(startMarker);
+            }
+
+            startMarker = L.marker(start)
+                .addTo(map)
+                .bindPopup("Ambulance Starting Location")
+                .openPopup();
+
+            map.setView(start, 15);
+
+            updateSelection();
+
+            statusBox.textContent =
+                "Location selected! Now choose a hospital and click Find Routes.";
+        },
+
+        function () {
+            statusBox.textContent =
+                "Location unavailable. Allow location permission or select a point on the map.";
+        }
+    );
+});
+const directorySelect = document.getElementById("directorySelect");
+const directoryResult = document.getElementById("directoryResult");
+
+directorySelect.addEventListener("change", function () {
+    const hospital = directorySelect.value;
+
+    if (hospital === "") {
+        directoryResult.textContent = "Select a hospital.";
+    } else {
+        directoryResult.textContent =
+            "Selected hospital: " + hospital +
+            " | Tumakuru | Demonstration listing; details are not verified.";
+    }
+});
+</script>
+<section class="panel" id="hospitalDirectory">
+    <h3>🏥 Hospital Directory</h3>
+    <p>Select a hospital to view its demo listing.</p>
+
+    <select id="directorySelect">
+        <option value="">-- Select hospital --</option>
+        <option>District Hospital, Tumakuru</option>
+        <option>Siddaganga Hospital</option>
+        <option>Sri Siddhartha Medical College Hospital</option>
+        <option>Shridevi Hospital</option>
+    </select>
+
+    <div id="directoryResult" class="result">
+        Select a hospital.
+    </div>
+
+    <p class="notice">
+        Demonstration data only. Hospital details have not been verified.
+    </p>
+</section>
+</body>
+</html>
